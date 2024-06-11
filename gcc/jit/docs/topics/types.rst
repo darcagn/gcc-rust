@@ -117,6 +117,14 @@ Standard types
        -
      * - :c:data:`GCC_JIT_TYPE_LONG_DOUBLE`
        -
+     * - :c:data:`GCC_JIT_TYPE_FLOAT16`
+       -
+     * - :c:data:`GCC_JIT_TYPE_FLOAT32`
+       -
+     * - :c:data:`GCC_JIT_TYPE_FLOAT64`
+       -
+     * - :c:data:`GCC_JIT_TYPE_FLOAT128`
+       -
      * - :c:data:`GCC_JIT_TYPE_CONST_CHAR_PTR`
        - C type: ``(const char *)``
      * - :c:data:`GCC_JIT_TYPE_SIZE_T`
@@ -427,6 +435,11 @@ Reflection API
                gcc_jit_type_is_integral (gcc_jit_type *type)
 
      Return non-zero if the type is an integral.
+
+.. function::  int\
+               gcc_jit_type_is_floating_point (gcc_jit_type *type)
+
+     Return non-zero if the type is floating point.
 
 .. function::  gcc_jit_type *\
                gcc_jit_type_is_pointer (gcc_jit_type *type)

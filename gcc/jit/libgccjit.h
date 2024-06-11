@@ -52,6 +52,9 @@ typedef struct gcc_jit_context gcc_jit_context;
 /* A gcc_jit_result encapsulates the result of an in-memory compilation.  */
 typedef struct gcc_jit_result gcc_jit_result;
 
+/* A gcc_jit_target_info encapsulates the target info.  */
+typedef struct gcc_jit_target_info gcc_jit_target_info;
+
 /* An object created within a context.  Such objects are automatically
    cleaned up when the context is released.
 
@@ -171,6 +174,9 @@ enum gcc_jit_str_option
   /* The name of the program, for use as a prefix when printing error
      messages to stderr.  If NULL, or default, "libgccjit.so" is used.  */
   GCC_JIT_STR_OPTION_PROGNAME,
+
+  /* Special characters to allow in function names.  */
+  GCC_JIT_STR_OPTION_SPECIAL_CHARS_IN_FUNC_NAMES,
 
   GCC_JIT_NUM_STR_OPTIONS
 };
@@ -604,7 +610,13 @@ enum gcc_jit_types
   GCC_JIT_TYPE_INT16_T,
   GCC_JIT_TYPE_INT32_T,
   GCC_JIT_TYPE_INT64_T,
-  GCC_JIT_TYPE_INT128_T
+  GCC_JIT_TYPE_INT128_T,
+
+  GCC_JIT_TYPE_BFLOAT16,
+  GCC_JIT_TYPE_FLOAT16,
+  GCC_JIT_TYPE_FLOAT32,
+  GCC_JIT_TYPE_FLOAT64,
+  GCC_JIT_TYPE_FLOAT128,
 };
 
 extern gcc_jit_type *
@@ -661,7 +673,7 @@ extern gcc_jit_type *
 gcc_jit_context_new_array_type (gcc_jit_context *ctxt,
 				gcc_jit_location *loc,
 				gcc_jit_type *element_type,
-				int num_elements);
+				unsigned long num_elements);
 
 /* Struct-handling.  */
 
@@ -1030,6 +1042,12 @@ extern gcc_jit_lvalue *
 gcc_jit_global_set_initializer_rvalue (gcc_jit_lvalue *global,
 				       gcc_jit_rvalue *init_value);
 
+/* Create a reference to a machine-specific builtin function (sometimes called
+   intrinsic functions).  */
+extern gcc_jit_function *
+gcc_jit_context_get_target_builtin_function (gcc_jit_context *ctxt,
+                         const char *name);
+
 #define LIBGCCJIT_HAVE_gcc_jit_global_set_initializer
 
 /* Set an initial value for a global, which must be an array of
@@ -1045,6 +1063,9 @@ gcc_jit_global_set_initializer (gcc_jit_lvalue *global,
 				const void *blob,
 				size_t num_bytes);
 
+extern void
+gcc_jit_global_set_readonly (gcc_jit_lvalue *global);
+
 /* Upcasting.  */
 extern gcc_jit_object *
 gcc_jit_lvalue_as_object (gcc_jit_lvalue *lvalue);
@@ -1057,6 +1078,9 @@ gcc_jit_rvalue_as_object (gcc_jit_rvalue *rvalue);
 
 extern gcc_jit_type *
 gcc_jit_rvalue_get_type (gcc_jit_rvalue *rvalue);
+
+extern void
+gcc_jit_lvalue_remove (gcc_jit_lvalue *lvalue);
 
 /* Integer constants. */
 extern gcc_jit_rvalue *
@@ -1104,6 +1128,19 @@ gcc_jit_context_null (gcc_jit_context *ctxt,
 extern gcc_jit_rvalue *
 gcc_jit_context_new_sizeof (gcc_jit_context *ctxt,
 			    gcc_jit_type *type);
+
+#define LIBGCCJIT_HAVE_gcc_jit_context_new_alignof
+
+/* Generates an rvalue that is equal to the alignment of type.
+
+   This API entrypoint was added in LIBGCCJIT_ABI_38; you can test for its
+   presence using
+     #ifdef LIBGCCJIT_HAVE_gcc_jit_context_new_alignof  */
+
+extern gcc_jit_rvalue *
+gcc_jit_context_new_alignof (gcc_jit_context *ctxt,
+			     gcc_jit_type *type);
+
 
 /* String literals. */
 extern gcc_jit_rvalue *
@@ -1313,6 +1350,18 @@ gcc_jit_context_new_array_access (gcc_jit_context *ctxt,
 				  gcc_jit_rvalue *ptr,
 				  gcc_jit_rvalue *index);
 
+extern gcc_jit_rvalue *
+gcc_jit_context_convert_vector (gcc_jit_context *ctxt,
+				gcc_jit_location *loc,
+				gcc_jit_rvalue *vector,
+				gcc_jit_type *type);
+
+extern gcc_jit_lvalue *
+gcc_jit_context_new_vector_access (gcc_jit_context *ctxt,
+				   gcc_jit_location *loc,
+				   gcc_jit_rvalue *vector,
+				   gcc_jit_rvalue *index);
+
 /* Field access is provided separately for both lvalues and rvalues.  */
 
 /* Accessing a field of an lvalue of struct type, analogous to:
@@ -1396,6 +1445,13 @@ gcc_jit_function_new_local (gcc_jit_function *func,
 			    gcc_jit_type *type,
 			    const char *name);
 
+extern gcc_jit_lvalue *
+gcc_jit_function_new_temp (gcc_jit_function *func,
+			   gcc_jit_location *loc,
+			   gcc_jit_type *type);
+
+#define LIBGCCJIT_HAVE_gcc_jit_function_new_temp
+
 /**********************************************************************
  Statement-creation.
  **********************************************************************/
@@ -1411,6 +1467,38 @@ extern void
 gcc_jit_block_add_eval (gcc_jit_block *block,
 			gcc_jit_location *loc,
 			gcc_jit_rvalue *rvalue);
+
+/* Add a try/catch statement.
+   This is equivalent to this C++ code:
+     try {
+        try_block
+     }
+     catch (...) {
+        catch_block
+     }
+*/
+
+void
+gcc_jit_block_add_try_catch (gcc_jit_block *block,
+			     gcc_jit_location *loc,
+			     gcc_jit_block *try_block,
+			     gcc_jit_block *catch_block);
+
+/* Add a try/finally statement.
+   This is equivalent to this C++-like code:
+     try {
+        try_block
+     }
+     finally {
+        finally_block
+     }
+*/
+
+void
+gcc_jit_block_add_try_finally (gcc_jit_block *block,
+			       gcc_jit_location *loc,
+			       gcc_jit_block *try_block,
+			       gcc_jit_block *finally_block);
 
 /* Add evaluation of an rvalue, assigning the result to the given
    lvalue.
@@ -1809,6 +1897,12 @@ extern gcc_jit_rvalue *
 gcc_jit_function_get_address (gcc_jit_function *fn,
 			      gcc_jit_location *loc);
 
+void
+gcc_jit_function_set_personality_function (gcc_jit_function *fn,
+                                           gcc_jit_function *personality_func);
+
+extern void
+gcc_jit_set_global_personality_function_name (char* name);
 
 #define LIBGCCJIT_HAVE_gcc_jit_context_new_rvalue_from_vector
 
@@ -1826,6 +1920,21 @@ gcc_jit_context_new_rvalue_from_vector (gcc_jit_context *ctxt,
 					gcc_jit_type *vec_type,
 					size_t num_elements,
 					gcc_jit_rvalue **elements);
+
+/* Build a permutation vector rvalue from an 3 arrays of elements.
+
+   "vec_type" should be a vector type, created using gcc_jit_type_get_vector.
+
+   This API entrypoint was added in LIBGCCJIT_ABI_25; you can test for its
+   presence using
+     #ifdef LIBGCCJIT_HAVE_TARGET_BUILTIN
+*/
+extern gcc_jit_rvalue *
+gcc_jit_context_new_rvalue_vector_perm (gcc_jit_context *ctxt,
+					gcc_jit_location *loc,
+					gcc_jit_rvalue *elements1,
+					gcc_jit_rvalue *elements2,
+					gcc_jit_rvalue *mask);
 
 #define LIBGCCJIT_HAVE_gcc_jit_version
 
@@ -1985,10 +2094,19 @@ gcc_jit_function_type_get_param_type (gcc_jit_function_type *function_type,
 extern int
 gcc_jit_type_is_integral (gcc_jit_type *type);
 
+/* Return non-zero if the type is floating point */
+extern int
+gcc_jit_type_is_floating_point(gcc_jit_type * type);
+
 /* Return the type pointed by the pointer type or NULL if it's not a
  * pointer.  */
 extern gcc_jit_type *
 gcc_jit_type_is_pointer (gcc_jit_type *type);
+
+/* Return the type behind const type or NULL if it's not a
+ * const type.  */
+extern gcc_jit_type *
+gcc_jit_type_is_const (gcc_jit_type *type);
 
 /* Given a type, return a dynamic cast to a vector type or NULL.  */
 extern gcc_jit_vector_type *
@@ -2065,6 +2183,42 @@ extern void
 gcc_jit_lvalue_add_string_attribute (gcc_jit_lvalue *variable,
 				     enum gcc_jit_variable_attribute attribute,
 				     const char* value);
+
+extern gcc_jit_target_info *
+gcc_jit_context_get_target_info (gcc_jit_context *ctxt);
+
+extern void
+gcc_jit_context_set_output_ident (gcc_jit_context *ctxt, const char* output_ident);
+
+extern void
+gcc_jit_target_info_release (gcc_jit_target_info *info);
+
+extern int
+gcc_jit_target_info_cpu_supports (gcc_jit_target_info *info,
+				  const char *feature);
+
+extern const char *
+gcc_jit_target_info_arch (gcc_jit_target_info *info);
+
+extern int
+gcc_jit_target_info_supports_128bit_int (gcc_jit_target_info *info);
+
+extern int
+gcc_jit_target_info_supports_target_dependent_type(gcc_jit_target_info *info, enum gcc_jit_types type);
+
+/* Given type "T", get type "T __attribute__ ((packed))".  */
+extern void
+gcc_jit_type_set_packed (gcc_jit_type *type);
+
+extern void
+gcc_jit_field_set_location (gcc_jit_field *field,
+			    gcc_jit_location *loc);
+extern void
+gcc_jit_function_set_location (gcc_jit_function *func,
+			       gcc_jit_location *loc);
+extern void
+gcc_jit_rvalue_set_location (gcc_jit_rvalue *rvalue,
+			     gcc_jit_location *loc);
 
 #ifdef __cplusplus
 }

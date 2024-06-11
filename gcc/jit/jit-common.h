@@ -36,7 +36,7 @@ along with GCC; see the file COPYING3.  If not see
 #endif
 #endif
 
-const int NUM_GCC_JIT_TYPES = GCC_JIT_TYPE_INT128_T + 1;
+const int NUM_GCC_JIT_TYPES = GCC_JIT_TYPE_FLOAT128 + 1;
 
 /* This comment is included by the docs.
 
@@ -93,6 +93,20 @@ const int NUM_GCC_JIT_TYPES = GCC_JIT_TYPE_INT128_T + 1;
 
    End of comment for inclusion in the docs.  */
 
+static inline tree
+jit_tree_chain_next (tree t)
+{
+  /* TREE_CHAIN of a type is TYPE_STUB_DECL, which is different
+     kind of object, never a long chain of nodes.  Prefer
+     TYPE_NEXT_VARIANT for types.  */
+  if (CODE_CONTAINS_STRUCT (TREE_CODE (t), TS_TYPE_COMMON))
+    return TYPE_NEXT_VARIANT (t);
+  /* Otherwise, if there is TREE_CHAIN, return it.  */
+  if (CODE_CONTAINS_STRUCT (TREE_CODE (t), TS_COMMON))
+    return TREE_CHAIN (t);
+  return NULL;
+}
+
 namespace gcc {
 
 namespace jit {
@@ -118,6 +132,7 @@ namespace recording {
         class struct_;
 	class union_;
       class vector_type;
+      class array_type;
     class field;
       class bitfield;
     class fields;

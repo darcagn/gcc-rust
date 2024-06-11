@@ -54,9 +54,10 @@ set_variable_string_attribute (
 
 /* playback::context is an abstract base class.
 
-   The two concrete subclasses are:
+   The three concrete subclasses are:
    - playback::compile_to_memory
-   - playback::compile_to_file.  */
+   - playback::compile_to_file.
+   - playback::get_target_info  */
 
 class context : public log_user
 {
@@ -77,10 +78,13 @@ public:
   type *
   get_type (enum gcc_jit_types type);
 
+  void
+  set_output_ident (const char* ident);
+
   type *
   new_array_type (location *loc,
 		  type *element_type,
-		  int num_elements);
+		  unsigned long num_elements);
 
   field *
   new_field (location *loc,
@@ -96,7 +100,8 @@ public:
   compound_type *
   new_compound_type (location *loc,
 		     const char *name,
-		     bool is_struct); /* else is union */
+		     bool is_struct, /* else is union */
+		     bool is_packed);
 
   type *
   new_function_type (type *return_type,
@@ -121,7 +126,8 @@ public:
 					    std::string>> &string_attributes,
 		const std::vector<std::pair<gcc_jit_fn_attribute,
 					    std::vector<int>>>
-					    &int_array_attributes);
+					    &int_array_attributes,
+		int is_target_builtin);
 
   lvalue *
   new_global (location *loc,
@@ -130,7 +136,9 @@ public:
 	      const char *name,
 	      enum global_var_flags flags,
 	      const std::vector<std::pair<gcc_jit_variable_attribute,
-					  std::string>> &attributes);
+					  std::string>> &attributes,
+	      bool readonly,
+              bool removed);
 
   lvalue *
   new_global_initialized (location *loc,
@@ -144,7 +152,9 @@ public:
 			  const std::vector<std::pair<
 					    gcc_jit_variable_attribute,
 					    std::string>>
-					    &attributes);
+					    &attributes,
+			  bool readonly,
+                          bool removed);
 
   rvalue *
   new_ctor (location *log,
@@ -166,12 +176,21 @@ public:
   new_sizeof (type *type);
 
   rvalue *
+  new_alignof (type *type);
+
+  rvalue *
   new_string_literal (const char *value);
 
   rvalue *
   new_rvalue_from_vector (location *loc,
 			  type *type,
 			  const auto_vec<rvalue *> &elements);
+
+  rvalue *
+  new_rvalue_vector_perm (location *loc,
+			  rvalue* elements1,
+			  rvalue* elements2,
+			  rvalue* mask);
 
   rvalue *
   new_unary_op (location *loc,
@@ -216,6 +235,16 @@ public:
   new_array_access (location *loc,
 		    rvalue *ptr,
 		    rvalue *index);
+
+  rvalue *
+  convert_vector (location *loc,
+		  rvalue *vector,
+		  type *type);
+
+  lvalue *
+  new_vector_access (location *loc,
+		     rvalue *vector,
+		     rvalue *index);
 
   void
   set_str_option (enum gcc_jit_str_option opt,
@@ -334,9 +363,11 @@ private:
 		   const char *name,
 		   enum global_var_flags flags,
 		   const std::vector<std::pair<gcc_jit_variable_attribute,
-					       std::string>> &attributes);
+					       std::string>> &attributes,
+		   bool readonly,
+                   bool removed);
   lvalue *
-  global_finalize_lvalue (tree inner);
+  global_finalize_lvalue (tree inner, bool removed);
 
 private:
 
@@ -433,6 +464,18 @@ class compile_to_file : public context
   const char *m_output_path;
 };
 
+class get_target_info : public context
+{
+ public:
+  get_target_info (recording::context *ctxt) : context (ctxt)
+  {
+  }
+
+  void postprocess (const char *) final override
+  {
+  }
+};
+
 
 /* A temporary wrapper object.
    These objects are (mostly) only valid during replay.
@@ -493,7 +536,7 @@ public:
     : type (inner)
   {}
 
-  void set_fields (const auto_vec<field *> *fields);
+  void set_fields (const auto_vec<field *> *fields, bool is_packed);
 };
 
 class field : public wrapper
@@ -530,13 +573,17 @@ public:
 	     type *type,
 	     const char *name,
 	     const std::vector<std::pair<gcc_jit_variable_attribute,
-					 std::string>> &attributes);
+					 std::string>> &attributes,
+	     bool is_temp);
 
   block*
   new_block (const char *name);
 
   rvalue *
   get_address (location *loc);
+
+  void
+  set_personality_function (function *personality_function);
 
   void
   build_stmt_list ();
@@ -609,6 +656,12 @@ public:
 	    rvalue *rvalue);
 
   void
+  add_try_catch (location *loc,
+		 block *try_block,
+		 block *catch_block,
+		 bool is_finally);
+
+  void
   add_assignment (location *loc,
 		  lvalue *lvalue,
 		  rvalue *rvalue);
@@ -671,6 +724,7 @@ private:
 
 public: // for now
   tree m_label_expr;
+  bool m_is_try_or_catch = false;
 
   friend class function;
 };
@@ -847,5 +901,7 @@ extern playback::context *active_playback_ctxt;
 } // namespace gcc::jit
 
 } // namespace gcc
+
+extern hash_map<nofree_string_hash, tree> target_builtins;
 
 #endif /* JIT_PLAYBACK_H */

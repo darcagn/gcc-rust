@@ -2369,11 +2369,13 @@ toplev::finalize (void)
   symtab_thunks_cc_finalize ();
   dwarf2cfi_cc_finalize ();
   dwarf2out_cc_finalize ();
+  dwarf2asm_cc_finalize ();
   gcse_cc_finalize ();
   ipa_cp_cc_finalize ();
   ira_costs_cc_finalize ();
   tree_cc_finalize ();
   reginfo_cc_finalize ();
+  varasm_cc_finalize ();
 
   /* save_decoded_options uses opts_obstack, so these must
      be cleaned up together.  */
